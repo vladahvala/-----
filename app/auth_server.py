@@ -1,4 +1,6 @@
 import os
+
+import logging
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from html import escape
@@ -16,6 +18,12 @@ ALGORITHM = "HS256"
 TOKEN_HOURS = 8
 COOKIE_NAME = "access_token"
 RESERVED_NAMES = {"admin", "root"}
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+logger = logging.getLogger("auth")
 
 app = FastAPI(title="University Monitoring Auth Service")
 
@@ -117,6 +125,7 @@ def register(user: UserRegister):
             (user.username, hash_password(user.password)),
         )
         connection.commit()
+        logger.info("User registered: %s", user.username)
         return {"message": "User registered successfully"}
     except sqlite3.IntegrityError:
         raise HTTPException(status_code=409, detail="Username already exists")
@@ -128,6 +137,7 @@ def register(user: UserRegister):
 def login(user: UserLogin, response: Response):
     username = authenticate(user.username, user.password)
     if username is None:
+        logger.warning("Failed API login attempt: username=%s", user.username)
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
     token = create_token(username)
@@ -146,8 +156,10 @@ def login_page():
 def login_form(username: str = Form(...), password: str = Form(...)):
     name = authenticate(username, password)
     if name is None:
+        logger.warning("Failed login attempt: username=%s", username)
         return HTMLResponse(render_login("Невірний логін або пароль"), status_code=401)
 
+    logger.info("User logged in: %s", name)
     response = RedirectResponse("/", status_code=303)
     set_auth_cookie(response, create_token(name))
     return response

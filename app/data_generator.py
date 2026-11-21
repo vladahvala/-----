@@ -4,6 +4,8 @@ import time
 import random
 from datetime import datetime
 
+import logging
+
 import psycopg
 from prometheus_client import start_http_server, Counter, Gauge
 
@@ -22,6 +24,12 @@ DB_CONFIG = {
     "user": "university_user",
     "password": os.getenv("POSTGRES_PASSWORD", "university_pass")
 }
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+logger = logging.getLogger("data-generator")
 
 # Налаштування трасування
 resource = Resource.create({
@@ -88,8 +96,10 @@ def generate_event(connection):
     ]
 
     event_type = random.choice(event_types)
+    value = random.randint(1, 100)
 
     with tracer.start_as_current_span("generate_event") as span:
+        trace_id = format(span.get_span_context().trace_id, "032x")
         try:
             span.set_attribute("db.system", "postgresql")
             span.set_attribute("db.operation", "INSERT")
@@ -100,43 +110,41 @@ def generate_event(connection):
                     INSERT INTO monitoring_events
                         (event_type, description, value)
                     VALUES (%s, %s, %s);
-                """, (
-                    event_type,
-                    "Generated test event",
-                    random.randint(1, 100)
-                ))
+                """, (event_type, "Generated test event", value))
 
             connection.commit()
-
             EVENTS_TOTAL.labels(event_type=event_type).inc()
+
+            logger.info("Event generated: type=%s value=%s trace_id=%s",
+                        event_type, value, trace_id)
 
         except Exception as error:
             span.record_exception(error)
             span.set_status(Status(StatusCode.ERROR))
+            logger.error("Failed to generate event: %s trace_id=%s", error, trace_id)
             raise
-
 
 def main():
     start_http_server(8001)
 
-    print("Prometheus metrics available on port 8001")
-    print("Connecting to PostgreSQL...")
+    logger.info("Prometheus metrics available on port 8001")
+    logger.info("Connecting to PostgreSQL...")
 
     try:
         with psycopg.connect(**DB_CONFIG) as connection:
             DB_CONNECTION_STATUS.set(1)
 
-            print("Connected successfully!")
+            logger.info("Connected successfully")
             create_table(connection)
 
-            print("Table monitoring_events is ready.")
+            logger.info("Table monitoring_events is ready")
 
             while True:
                 generate_event(connection)
-                print(f"Event generated at {datetime.now()}")
                 time.sleep(5)
 
     except Exception:
+        logger.exception("Lost connection to PostgreSQL")
         DB_CONNECTION_STATUS.set(0)
         raise
 
