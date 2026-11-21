@@ -7,6 +7,12 @@ deleteDatasources:
     orgId: 1
   - name: Tempo
     orgId: 1
+  - name: prometheus
+    orgId: 1
+  - name: loki
+    orgId: 1
+  - name: tempo
+    orgId: 1
 
 datasources:
   - name: Prometheus
