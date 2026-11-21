@@ -10,6 +10,13 @@ import jwt
 from fastapi import FastAPI, Form, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from opentelemetry import trace
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
 from app.auth_database import create_users_table, get_connection
 from app.auth_models import UserLogin, UserRegister
 
@@ -25,7 +32,17 @@ logging.basicConfig(
 )
 logger = logging.getLogger("auth")
 
+provider = TracerProvider(
+    resource=Resource.create({"service.name": "university-monitoring-auth"})
+)
+provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(
+    endpoint=os.getenv("OTLP_ENDPOINT", "http://localhost:4318/v1/traces")
+)))
+trace.set_tracer_provider(provider)
+tracer = trace.get_tracer("university-monitoring-auth")
+
 app = FastAPI(title="University Monitoring Auth Service")
+FastAPIInstrumentor.instrument_app(app, excluded_urls="health,verify")
 
 
 @app.on_event("startup")
@@ -51,19 +68,26 @@ def create_token(username: str) -> str:
 
 
 def authenticate(username: str, password: str):
-    connection = get_connection()
-    try:
-        row = connection.execute(
-            "SELECT username, password_hash FROM users WHERE username = ?",
-            (username,),
-        ).fetchone()
-    finally:
-        connection.close()
+    with tracer.start_as_current_span("authenticate") as span:
+        span.set_attribute("enduser.id", username)
 
-    if row and check_password(password, row["password_hash"]):
-        return row["username"]
-    return None
+        with tracer.start_as_current_span("sqlite.select_user") as db_span:
+            db_span.set_attribute("db.system", "sqlite")
+            db_span.set_attribute("db.operation", "SELECT")
+            connection = get_connection()
+            try:
+                row = connection.execute(
+                    "SELECT username, password_hash FROM users WHERE username = ?",
+                    (username,),
+                ).fetchone()
+            finally:
+                connection.close()
 
+        with tracer.start_as_current_span("bcrypt.check_password"):
+            ok = row is not None and check_password(password, row["password_hash"])
+
+        span.set_attribute("auth.success", ok)
+        return row["username"] if ok else None
 
 def set_auth_cookie(response: Response, token: str):
     response.set_cookie(
@@ -169,6 +193,8 @@ def login_form(username: str = Form(...), password: str = Form(...)):
 def logout():
     response = RedirectResponse("/auth/login-page", status_code=303)
     response.delete_cookie(COOKIE_NAME)
+    response.delete_cookie("grafana_session")
+    response.delete_cookie("grafana_session_expiry")
     return response
 
 

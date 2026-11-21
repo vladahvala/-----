@@ -9,3 +9,4 @@ opentelemetry-exporter-otlp
 bcrypt
 pyjwt
 python-multipart
+opentelemetry-instrumentation-fastapi
