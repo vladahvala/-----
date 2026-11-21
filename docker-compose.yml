@@ -10,8 +10,6 @@ services:
       POSTGRES_USER: university_user
       POSTGRES_PASSWORD: university_pass
       POSTGRES_EXPORTER_PASSWORD: ${POSTGRES_EXPORTER_PASSWORD}
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./config/postgres/init:/docker-entrypoint-initdb.d:ro
@@ -29,8 +27,6 @@ services:
       DATA_SOURCE_URI: "postgres:5432/university_db?sslmode=disable"
       DATA_SOURCE_USER: postgres_exporter
       DATA_SOURCE_PASS: "${POSTGRES_EXPORTER_PASSWORD}"
-    ports:
-      - "9187:9187"
     depends_on:
       - postgres
     restart: unless-stopped
@@ -42,10 +38,9 @@ services:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
       - --storage.tsdb.retention.time=15d
+      - --web.external-url=http://localhost:8080/prometheus/
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    ports:
-      - "9090:9090"
     volumes:
       - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus_data:/prometheus
@@ -79,6 +74,7 @@ services:
     depends_on:
       - grafana
       - auth
+      - prometheus
     restart: unless-stopped
 
   auth:
@@ -86,11 +82,10 @@ services:
     container_name: university-auth
     command: uvicorn app.auth_server:app --host 0.0.0.0 --port 8000
     environment:
+      JWT_SECRET: ${JWT_SECRET}
       OTLP_ENDPOINT: http://tempo:4318/v1/traces
     depends_on:
       - tempo
-    ports:
-      - "8000:8000"
     volumes:
       - auth_data:/app/data
     restart: unless-stopped
@@ -112,8 +107,6 @@ services:
   loki:
     image: grafana/loki:latest
     container_name: university-loki
-    ports:
-      - "3100:3100"
     volumes:
       - ./config/loki/loki-config.yml:/etc/loki/local-config.yaml
       - loki_data:/loki
@@ -128,8 +121,6 @@ services:
       - --server.http.listen-addr=0.0.0.0:12345
       - --storage.path=/var/lib/alloy/data
       - /etc/alloy/config.alloy
-    ports:
-      - "12345:12345"
     volumes:
       - ./config/alloy/config.alloy:/etc/alloy/config.alloy:ro
       - /var/run/docker.sock:/var/run/docker.sock
@@ -143,10 +134,6 @@ services:
     container_name: university-tempo
     command:
       - -config.file=/etc/tempo/tempo.yml
-    ports:
-      - "3200:3200"
-      - "4317:4317"
-      - "4318:4318"
     volumes:
       - ./config/tempo/tempo.yml:/etc/tempo/tempo.yml
       - tempo_data:/var/tempo
