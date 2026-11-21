@@ -16,7 +16,7 @@ from opentelemetry.trace import Status, StatusCode
 
 
 DB_CONFIG = {
-    "host": "localhost",
+    "host": os.getenv("DB_HOST", "localhost"),
     "port": 5432,
     "dbname": "university_db",
     "user": "university_user",
@@ -31,7 +31,7 @@ resource = Resource.create({
 provider = TracerProvider(resource=resource)
 
 exporter = OTLPSpanExporter(
-    endpoint="http://localhost:4318/v1/traces"
+    endpoint=os.getenv("OTLP_ENDPOINT", "http://localhost:4318/v1/traces")
 )
 
 provider.add_span_processor(BatchSpanProcessor(exporter))
