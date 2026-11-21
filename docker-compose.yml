@@ -60,6 +60,9 @@ services:
       GF_USERS_AUTO_ASSIGN_ORG_ROLE: "Editor"
     volumes:
       - grafana_data:/var/lib/grafana
+      - ./config/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./config/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./config/grafana/dashboards:/etc/grafana/dashboards:ro
     restart: unless-stopped
 
   nginx:
