@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+pydantic
+psycopg[binary]
+prometheus-client
+opentelemetry-api
+opentelemetry-sdk
+opentelemetry-exporter-otlp
+bcrypt
+pyjwt
+python-multipart
